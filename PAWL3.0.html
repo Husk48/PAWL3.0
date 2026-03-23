@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LycorisHZ Anime Cloud Randomizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem 0;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        
+        .container {
+            text-align: center;
+            background: #1e1e1e;
+            padding: 2.5rem 2rem;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            max-width: 600px;
+            width: 90%;
+            border: 1px solid #333;
+            margin-bottom: 20px;
+        }
+        
+        h1 { color: #8ab4f8; margin-bottom: 0.5rem; font-weight: 300; letter-spacing: 1px;}
+        
+        #result-container {
+            min-height: 10rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 20px;
+        }
+
+        #result-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #ff80ab;
+            margin-bottom: 15px;
+        }
+        
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+        button {
+            border: none;
+            padding: 10px 20px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .main-btn { background-color: #8ab4f8; color: #121212; font-size: 1.1rem; padding: 14px 35px; }
+        .main-btn:hover { background-color: #aecbfa; transform: scale(1.05); }
+
+        .mal-btn { background-color: #2e51a2; color: white; text-decoration: none; padding: 8px 18px; border-radius: 20px; font-size: 0.8rem; display: none; }
+        
+        .watched-btn { background-color: #444; color: #eee; font-size: 0.8rem; display: none; }
+
+        .search-container { width: 90%; max-width: 600px; background: #1e1e1e; padding: 1.5rem; border-radius: 20px; border: 1px solid #333; }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 10px;
+            color: white;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+
+        .search-results { max-height: 200px; overflow-y: auto; text-align: left; }
+        .search-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #333;
+        }
+        .search-item span { font-size: 0.9rem; flex: 1; margin-right: 10px; }
+        .search-item.is-watched span { text-decoration: line-through; color: #666; }
+
+        .tag-btn { padding: 4px 10px; font-size: 0.7rem; border-radius: 5px; background: #8ab4f8; color: #121212; }
+        .tag-btn.watched { background: #f44336; color: white; }
+
+        .stats { margin-top: 15px; font-size: 0.8rem; color: #666; }
+        .reset-link { color: #555; cursor: pointer; text-decoration: underline; font-size: 0.7rem; margin-top: 10px; display: block; text-align: center; }
+        
+        /* New Cloud Styles */
+        .sync-info { font-size: 0.7rem; margin-top: 12px; color: #8ab4f8; cursor: pointer; text-decoration: none; border: 1px solid #333; padding: 5px; border-radius: 5px; display: inline-block;}
+        .cloud-badge { background: #2e7d32; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.6rem; margin-left: 5px; vertical-align: middle; display: none;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>PLAN TO WATCH <span id="cloud-status" class="cloud-badge">CLOUD SYNCED</span></h1>
+    
+    <div id="result-container">
+        <div id="result-title">Ready?</div>
+        <div class="btn-row">
+            <a href="#" id="mal-link" target="_blank" class="mal-btn">MAL ↗</a>
+            <button id="mark-watched-roll" class="watched-btn" onclick="toggleWatchedCurrent()">Mark as Watched</button>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button class="main-btn" onclick="pickAnime()">RANDOMIZE</button>
+    </div>
+    
+    <div class="stats" id="stat-counts">Loading list...</div>
+    <div class="sync-info" onclick="setupSync()">☁️ Sync / Cloud Key</div>
+</div>
+
+<div class="search-container">
+    <input type="text" id="searchInput" placeholder="Search to mark as watched..." onkeyup="searchAnime()">
+    <div id="searchResults" class="search-results"></div>
+    <span class="reset-link" onclick="resetData()">Reset all local data</span>
+</div>
+
+<script>
+    // --- 1. CONFIGURATION ---
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
+    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const animeData = [
+        "91 Days", "A Galaxy Next Door", "A Sister's All You Need", "ACCA: 13-Territory Inspection Dept.", "Afro Samurai", "After the Rain", "Aggretsuko (ONA)", "Akame ga Kill!", "Akira", "Aldnoah.Zero", "Allison & Lillia", "Amagami SS", "Angel Beats!", "Anohana: The Flower We Saw That Day", "Another", "Aoharu x Machinegun", "Astra Lost in Space", "Ayakashi: Samurai Horror Tales", "Azumanga Daioh: The Animation", "Baccano!", "Banana Fish", "Banished From The Hero's Party, I Decided To Live A Quiet Life In The Countryside", "Beyond the Boundary", "Birdy the Mighty: Decode", "Black Lagoon", "Blast of Tempest", "Blood Blockade Battlefront", "Blood Lad", "Blood+", "Blue Spring Ride", "Bokurano", "Boogiepop and Others", "Bottom-Tier Character Tomozaki", "BTOOOM!", "Bungo Stray Dogs", "Campfire Cooking in Another World with My Absurd Skill", "Canaan", "City The Animation", "Clannad", "Clannad The Motion Picture", "Clannad: After Story", "Clannad: After Story - Another World, Kyou Chapter", "Clannad: Another World, Tomoyo Chapter", "Corpse Princess: Aka", "Cowboy Bebop", "Cromartie High School", "D.Gray-man", "Danganronpa: The Animation", "Dark Gathering", "Darker than Black", "DARLING in the FRANXX", "Darwin's Game", "Date A Live", "Days with My Stepsister", "Dead Mount Death Play", "Demon Lord 2099", "Den-noh Coil", "Devil Survivor 2 The Animation", "Dimension W", "Domestic Girlfriend", "Don't Toy with Me, Miss Nagatoro 2nd Attack", "Dorohedoro", "Drifting Dragons", "Durarara!!", "Dusk Maiden of Amnesia", "Eden of The East", "Elfen Lied", "Emma: A Victorian Romance Season Two", "Ergo Proxy", "Eureka Seven", "Fena: Pirate Princess", "Fire Force Season 3 Part 2", "Forest of Piano", "Frieren: Beyond Journey's End Season 2", "From the New World", "Full Dive: The Ultimate Next-Gen Full Dive RPG Is Even Shittier than Real Life!", "Ga-Rei-Zero", "Gangsta.", "Gankutsuou: The Count of Monte Cristo", "Gatchaman Crowds", "Gatchaman Crowds Insight", "GATE", "GeGeGe no Kitaro", "Genshiken", "Genshiken 2", "Ghost Hound", "Ghost Hunt", "Girlfriend, Girlfriend", "Girls' Last Tour", "God Eater", "Golden Time", "Good Night World", "Gosick", "Grimgar: Ashes and Illusions", "Ground Control to Psychoelectric Girl", "Guilty Crown", "Gungrave", "Gunslinger Girl", "Gurren Lagann", "Haikyu!!", "Hamatora The Animation", "Handa-kun", "Handyman Saitou in Another World", "Haven't You Heard? I'm Sakamoto", "Heaven's Memo Pad", "Hell Girl", "Hell's Paradise Season 2", "Hi Score Girl", "High School of the Dead", "Higurashi: When They Cry – Gou", "Hinamatsuri", "Honey and Clover", "Honey Lemon Soda", "Hotel Inhumans", "House of Five Leaves", "How a Realist Hero Rebuilt the Kingdom Part 2", "How I Attended an All-Guy's Mixer", "How Not to Summon a Demon Lord Ω", "Hozuki's Coolheadedness", "Humanity Has Declined", "I've Been Killing Slimes for 300 Years and Maxed Out My Level", "ID: INVADED", "Ikki Tousen: Battle Vixens", "In/Spectre", "Inari Kon Kon", "Insomniacs After School", "Interviews With Monster Girls", "Inu X Boku Secret Service", "Irina: The Vampire Cosmonaut", "Iroduku: The World in Colors", "Josee, the Tiger and the Fish", "Just Because!", "K-ON!", "Kaiba", "Kakushigoto", "Kamitsubaki City Under Construction", "Kannagi: Crazy Shrine Maidens", "Kaya-chan Isn't Scary", "Keep Your Hands Off Eizouken!", "Kemonozume", "Kids on the Slope", "Kill la Kill", "Kimi ni Todoke: From Me to You", "Kiss x Sis (TV)", "Kiznaiver", "Kobato.", "Koikimo", "Kokoro Connect", "Kubo Won't Let Me Be Invisible", "Kurau Phantom Memory", "Kyou kara Maou!", "Kyousougiga", "Life Lessons with Uramichi-Oniisan", "Log Horizon", "Love of Kill", "Lovely Complex", "Lucky☆Star", "Lycoris Recoil", "Made in Abyss", "Maid Sama!", "Malevolent Spirits: Mononogatari", "Maoyu", "Megalobox", "Megalobox 2: Nomad", "Mekakucity Actors", "Memories", "Mermaid Forest", "Midori Days", "Milky☆Subway: The Galactic Limited Express", "Minami-ke", "Miss Kobayashi's Dragon Maid: A Lonely Dragon Wants to be Loved", "Mission: Yozakura Family", "Mitsudomoe", "Mononoke", "Monster", "Moriarty the Patriot", "Moriarty the Patriot Part 2", "Moribito - Guardian of the Spirit", "Mother of the Goddess' Dormitory", "Mushi-Shi", "My Dress-Up Darling", "My Hero Academia Final Season", "My Home Hero", "My Love Story with Yamada-kun at Lv999", "My Senpai is Annoying", "My Status as an Assassin Obviously Exceeds the Hero's", "Mysterious Girlfriend X", "Natsume's Book of Friends Season 3", "Nodame Cantabile", "Nodame Cantabile: Paris-hen", "Nura: Rise of the Yokai Clan", "O Maidens in Your Savage Season", "Oban Star-Racers", "Occult Academy", "Odd Taxi", "OniAi", "Onimai: I'm Now Your Sister!", "OreImo", "Osamake: Romcom Where The Childhood Friend Won't Lose", "Paradise Kiss", "Paranoia Agent", "Patema Inverted", "Peace Maker Kurogane", "Photo Kano", "Ping Pong the Animation", "Planetes", "Plastic Memories", "Play It Cool, Guys", "Princess Jellyfish", "Psycho-Pass", "R.O.D -The TV-", "Rainbow", "Re:CREATORS", "Record of Ragnarok III", "Recovery of an MMO Junkie", "ReLIFE", "Remake Our Life!", "Requiem from the Darkness", "Romeo x Juliet", "Rozen Maiden: Zurückspulen", "Sabikui Bisco", "Sagrada Reset", "Saiyuki Reload", "Samurai 7", "Samurai Champloo", "Samurai Girls", "Sanda", "Sayonara, Zetsubou-Sensei", "School Days", "School Rumble", "Scum's Wish", "Sekirei: Pure Engagement", "Sentenced to Be a Hero", "Seraph of the End: Battle in Nagoya", "Seraph of the End: Vampire Reign", "Seraph of the End: Vampire Shahar", "Servant x Service", "Shigofumi: Letters from the Departed", "Shiki", "Shikimori's Not Just a Cutie", "Shirobako", "Silver Spoon", "Sing \"Yesterday\" for Me", "Skip and Loafer", "Skip Beat!", "So I'm a Spider, So What?", "Someday's Dreamers II: Sora", "Soul Eater", "Special A (S.A)", "SSSS.Gridman", "Strike Witches", "Student Council Staff Members", "Summer Pockets", "Summer Storm!", "Summer Time Rendering", "Takt Op. Destiny", "Terror in Resonance", "The Ambition of Oda Nobuna", "The Ancient Magus' Bride", "The Angel Next Door Spoils Me Rotten", "The Apothecary Diaries", "The Beast Player Erin", "The Comic Artist and His Assistants", "The Devil is a Part-Timer!", "The Disastrous Life of Saiki K.", "The Dungeon of Black Company", "The Eccentric Family", "The Fable", "The Faraway Paladin", "The Future Diary", "The Garden of Sinners Chapter 1: Overlooking View", "The Great Jahy Will Not Be Defeated!", "The Idaten Deities Know Only Peace", "The Irregular at Magic High School", "The Legendary Hero Is Dead!", "The Masterful Cat Is Depressed Again Today", "The Melancholy of Haruhi Suzumiya", "The Most Notorious \"Talker\" Runs the World's Greatest Clan", "The Mystic Archives of Dantalian", "The Royal Tutor", "The Squid Girl", "The Tatami Galaxy", "The Wallflower", "The World God Only Knows: Goddesses", "The World's Finest Assassin Gets Reincarnated in Another World as an Aristocrat", "To Your Eternity Season 3", "Today in Class 5-2 (TV)", "Toilet-Bound Hanako-kun", "Tojima Wants to Be a Kamen Rider", "Tokyo Magnitude 8.0", "Tomo-chan Is a Girl!", "Tonikawa: Over The Moon For You", "Toward the Terra (TV)", "Tower of God", "Train to the End of the World", "Trigun Stampede", "Tsugu Tsugumomo", "Tsukimichi -Moonlit Fantasy-", "Tsuritama", "Twin Star Exorcists", "Un-Go", "Wagnaria!!", "Waiting in the Summer", "WataMote: No Matter How I Look At It, It's You Guys' Fault I'm Not Popular!", "Wave, Listen to Me!", "Welcome to the Ballroom", "Welcome to the N.H.K.", "Why the Hell are You Here, Teacher!?", "Witch Watch", "World Trigger", "World Trigger 3rd Season", "xxxHOLiC", "Yakitate!! Japan", "Yatagarasu: The Raven Does Not Choose Its Master", "Yosuga no Sora: In Solitude, Where We Are Least", "Zombieland Saga Movie: Yumeginga Paradise", "[C] CONTROL - The Money and Soul of Possibility", "The Disastrous Life of Saiki K.", "Miss Kobayashi's Dragon Maid", "Recovery of an MMO Junkie"
+    ];
+
+    let watchedList = JSON.parse(localStorage.getItem('watchedAnime')) || [];
+    let currentAnime = "";
+    let secretKey = localStorage.getItem('animeSyncKey') || null;
+
+    // --- 2. CORE FUNCTIONS ---
+
+    async function updateStats() {
+        const remaining = animeData.filter(a => !watchedList.includes(a)).length;
+        document.getElementById('stat-counts').innerText = `TOTAL: ${animeData.length} | WATCHED: ${watchedList.length} | REMAINING: ${remaining}`;
+        
+        if (secretKey) {
+            document.getElementById('cloud-status').style.display = 'inline-block';
+            // Send data to Supabase
+            await supabaseClient.from('user_lists').upsert(
+                { secret_key: secretKey, watched_data: watchedList }, 
+                { onConflict: 'secret_key' }
+            );
+        }
+    }
+
+    function pickAnime() {
+        const titleDiv = document.getElementById('result-title');
+        const linkBtn = document.getElementById('mal-link');
+        const watchedBtn = document.getElementById('mark-watched-roll');
+        
+        const available = animeData.filter(a => !watchedList.includes(a));
+
+        if (available.length === 0) {
+            titleDiv.innerText = "All anime watched!";
+            linkBtn.style.display = "none";
+            watchedBtn.style.display = "none";
+            return;
+        }
+
+        titleDiv.style.opacity = 0;
+        linkBtn.style.display = "none";
+        watchedBtn.style.display = "none";
+        
+        setTimeout(() => {
+            currentAnime = available[Math.floor(Math.random() * available.length)];
+            const searchUrl = "https://myanimelist.net/anime.php?q=" + encodeURIComponent(currentAnime) + "&cat=anime";
+
+            titleDiv.innerText = currentAnime;
+            titleDiv.style.opacity = 1;
+
+            linkBtn.href = searchUrl;
+            linkBtn.style.display = "inline-block";
+            watchedBtn.style.display = "inline-block";
+            watchedBtn.innerText = "Mark as Watched";
+        }, 200);
+    }
+
+    function toggleWatchedCurrent() {
+        if (!currentAnime) return;
+        toggleWatched(currentAnime);
+        document.getElementById('mark-watched-roll').innerText = "✓ Added";
+        setTimeout(() => { 
+            document.getElementById('result-title').innerText = "Ready?"; 
+            document.getElementById('mark-watched-roll').style.display="none"; 
+            document.getElementById('mal-link').style.display="none";
+        }, 800);
+    }
+
+    function toggleWatched(name) {
+        if (watchedList.includes(name)) {
+            watchedList = watchedList.filter(item => item !== name);
+        } else {
+            watchedList.push(name);
+        }
+        localStorage.setItem('watchedAnime', JSON.stringify(watchedList));
+        updateStats();
+        searchAnime();
+    }
+
+    function searchAnime() {
+        const query = document.getElementById('searchInput').value.toLowerCase();
+        const resultsDiv = document.getElementById('searchResults');
+        resultsDiv.innerHTML = "";
+
+        if (query.length < 2) return;
+
+        const matches = animeData.filter(a => a.toLowerCase().includes(query));
+
+        matches.forEach(anime => {
+            const isWatched = watchedList.includes(anime);
+            const div = document.createElement('div');
+            div.className = `search-item ${isWatched ? 'is-watched' : ''}`;
+            div.innerHTML = `
+                <span>${anime}</span>
+                <button class="tag-btn ${isWatched ? 'watched' : ''}" onclick="toggleWatched(\`${anime.replace(/`/g, "\\`")}\`)">
+                    ${isWatched ? 'Undo' : 'Watched'}
+                </button>
+            `;
+            resultsDiv.appendChild(div);
+        });
+    }
+
+    // --- 3. SYNC LOGIC ---
+
+    async function setupSync() {
+        if (!secretKey) {
+            const choice = confirm("You don't have a Sync Key yet. Create a new one to save your list to the cloud?");
+            if (choice) {
+                // Generate a random ID
+                secretKey = 'LHZ-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                localStorage.setItem('animeSyncKey', secretKey);
+                alert("Your NEW Sync Key is: " + secretKey + "\n\nSave this code! Enter it on other browsers to load this list.");
+                updateStats();
+            }
+        } else {
+            const action = prompt("CURRENT KEY: " + secretKey + "\n\nType 'RELOAD' to fetch updates from cloud, or paste a DIFFERENT key to switch devices:");
+            if (action === 'RELOAD' || action === 'reload') {
+                const { data, error } = await supabaseClient.from('user_lists').select('watched_data').eq('secret_key', secretKey).single();
+                if (data) {
+                    watchedList = data.watched_data;
+                    localStorage.setItem('watchedAnime', JSON.stringify(watchedList));
+                    alert("List updated from cloud!");
+                    location.reload();
+                } else {
+                    alert("Could not find data for this key on the server.");
+                }
+            } else if (action && action.length > 3) {
+                secretKey = action.trim().toUpperCase();
+                localStorage.setItem('animeSyncKey', secretKey);
+                alert("Key changed to " + secretKey + ". Fetching data...");
+                location.reload();
+            }
+        }
+    }
+
+    function resetData() {
+        if (confirm("This only clears your LOCAL browser cache. If you have a Sync Key, your data is still in the cloud. Clear local cache?")) {
+            watchedList = [];
+            localStorage.removeItem('watchedAnime');
+            updateStats();
+            location.reload();
+        }
+    }
+
+    // Initialize the page stats on load
+    updateStats();
+</script>
+</body>
+</html>
