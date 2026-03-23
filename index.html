@@ -98,13 +98,13 @@
         .reset-link { color: #555; cursor: pointer; text-decoration: underline; font-size: 0.7rem; margin-top: 10px; display: block; text-align: center; }
         
         .sync-info { font-size: 0.7rem; margin-top: 12px; color: #8ab4f8; cursor: pointer; text-decoration: none; border: 1px solid #333; padding: 5px; border-radius: 5px; display: inline-block;}
-        .cloud-badge { background: #2e7d32; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.6rem; margin-left: 5px; vertical-align: middle; display: none;}
+        .cloud-badge { background: #2e7d32; color: white; padding: 4px 10px; border-radius: 10px; font-size: 0.6rem; margin-left: 5px; vertical-align: middle; display: none;}
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>PLAN TO WATCH <span id="cloud-status" class="cloud-badge">CLOUD SYNCED</span></h1>
+    <h1>PLAN TO WATCH <span id="cloud-status" class="cloud-badge">LOADING...</span></h1>
     
     <div id="result-container">
         <div id="result-title">Ready?</div>
@@ -119,7 +119,7 @@
     </div>
     
     <div class="stats" id="stat-counts">Loading list...</div>
-    <div class="sync-info" onclick="setupSync()">☁️ Sync / Cloud Key</div>
+    <div class="sync-info" id="sync-btn-ui" onclick="setupSync()">☁️ Sync / Cloud Key</div>
 </div>
 
 <div class="search-container">
@@ -149,28 +149,42 @@
         document.getElementById('stat-counts').innerText = `TOTAL: ${animeData.length} | WATCHED: ${watchedList.length} | REMAINING: ${remaining}`;
         
         if (secretKey) {
-            document.getElementById('cloud-status').style.display = 'inline-block';
-            await supabaseClient.from('user_lists').upsert(
+            const statusBadge = document.getElementById('cloud-status');
+            statusBadge.style.display = 'inline-block';
+            statusBadge.innerText = "☁️ SAVING...";
+
+            const { error } = await supabaseClient.from('user_lists').upsert(
                 { secret_key: secretKey, watched_data: watchedList }, 
                 { onConflict: 'secret_key' }
             );
+
+            if (error) {
+                console.error("Cloud Error:", error.message);
+                statusBadge.innerText = "❌ SYNC ERROR";
+                statusBadge.style.background = "#b71c1c";
+            } else {
+                statusBadge.innerText = "✅ CLOUD SYNCED";
+                statusBadge.style.background = "#2e7d32";
+            }
         }
     }
 
-    // AUTO-LOAD FROM CLOUD ON STARTUP
     async function autoLoadFromCloud() {
-        if (secretKey) {
-            const { data, error } = await supabaseClient
-                .from('user_lists')
-                .select('watched_data')
-                .eq('secret_key', secretKey)
-                .single();
-            
-            if (data && data.watched_data) {
-                watchedList = data.watched_data;
-                localStorage.setItem('watchedAnime', JSON.stringify(watchedList));
-                updateStats(); // Refresh the UI
-            }
+        if (!secretKey) {
+            document.getElementById('cloud-status').style.display = 'none';
+            return;
+        }
+
+        const { data, error } = await supabaseClient
+            .from('user_lists')
+            .select('watched_data')
+            .eq('secret_key', secretKey)
+            .single();
+        
+        if (data && data.watched_data) {
+            watchedList = data.watched_data;
+            localStorage.setItem('watchedAnime', JSON.stringify(watchedList));
+            updateStats();
         }
     }
 
@@ -178,7 +192,6 @@
         const titleDiv = document.getElementById('result-title');
         const linkBtn = document.getElementById('mal-link');
         const watchedBtn = document.getElementById('mark-watched-roll');
-        
         const available = animeData.filter(a => !watchedList.includes(a));
 
         if (available.length === 0) {
@@ -194,12 +207,9 @@
         
         setTimeout(() => {
             currentAnime = available[Math.floor(Math.random() * available.length)];
-            const searchUrl = "https://myanimelist.net/anime.php?q=" + encodeURIComponent(currentAnime) + "&cat=anime";
-
             titleDiv.innerText = currentAnime;
             titleDiv.style.opacity = 1;
-
-            linkBtn.href = searchUrl;
+            linkBtn.href = "https://myanimelist.net/anime.php?q=" + encodeURIComponent(currentAnime);
             linkBtn.style.display = "inline-block";
             watchedBtn.style.display = "inline-block";
             watchedBtn.innerText = "Mark as Watched";
@@ -232,37 +242,30 @@
         const query = document.getElementById('searchInput').value.toLowerCase();
         const resultsDiv = document.getElementById('searchResults');
         resultsDiv.innerHTML = "";
-
         if (query.length < 2) return;
-
         const matches = animeData.filter(a => a.toLowerCase().includes(query));
-
         matches.forEach(anime => {
             const isWatched = watchedList.includes(anime);
             const div = document.createElement('div');
             div.className = `search-item ${isWatched ? 'is-watched' : ''}`;
-            div.innerHTML = `
-                <span>${anime}</span>
-                <button class="tag-btn ${isWatched ? 'watched' : ''}" onclick="toggleWatched(\`${anime.replace(/`/g, "\\`")}\`)">
-                    ${isWatched ? 'Undo' : 'Watched'}
-                </button>
-            `;
+            div.innerHTML = `<span>${anime}</span><button class="tag-btn ${isWatched ? 'watched' : ''}" onclick="toggleWatched(\`${anime.replace(/`/g, "\\`")}\`)">${isWatched ? 'Undo' : 'Watched'}</button>`;
             resultsDiv.appendChild(div);
         });
     }
 
     async function setupSync() {
         if (!secretKey) {
-            const choice = confirm("Create a new Cloud Key to save your progress?");
+            const choice = confirm("Generate a new Cloud Key?");
             if (choice) {
-                secretKey = 'LHZ-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                const newKey = 'LHZ-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                secretKey = newKey;
                 localStorage.setItem('animeSyncKey', secretKey);
-                alert("Your NEW Sync Key is: " + secretKey + "\n\nSave this! Use it on other browsers to sync.");
+                alert("Key Generated: " + secretKey + "\n\nUse this on other browsers!");
                 updateStats();
             }
         } else {
-            const action = prompt("CURRENT KEY: " + secretKey + "\n\nType 'RELOAD' or paste a DIFFERENT key to switch devices:");
-            if (action && (action.toLowerCase() === 'reload')) {
+            const action = prompt("KEY: " + secretKey + "\n\nType 'RELOAD' or paste a DIFFERENT key:");
+            if (action && action.toUpperCase() === 'RELOAD') {
                 location.reload();
             } else if (action && action.length > 3) {
                 secretKey = action.trim().toUpperCase();
@@ -273,17 +276,17 @@
     }
 
     function resetData() {
-        if (confirm("Clear local cache? This won't delete cloud data if you have a key.")) {
+        if (confirm("Clear local cache?")) {
             watchedList = [];
             localStorage.removeItem('watchedAnime');
-            updateStats();
+            localStorage.removeItem('animeSyncKey');
             location.reload();
         }
     }
 
-    // Startup
+    // Startup Execution
     updateStats();
-    autoLoadFromCloud(); 
+    autoLoadFromCloud();
 </script>
 </body>
 </html>
